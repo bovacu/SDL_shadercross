@@ -1,0 +1,3 @@
+WINDOWS
+-------
+mkdir build && clang src/SDL_shadercross.c src/cli.c -Iinclude -I../SDL/include -Iexternal/SPIRV-Cross -DSDL_SHADERCROSS_DXC -Lexternal -lSDL3 -LC:\VulkanSDK\1.4.321.1\Bin -lspirv-cross-c-shared -LC:/VulkanSDK/1.4.321.1/Lib -lvulkan-1 -ldxil -ldxcompiler -o build/shadercross.exe && cp build external/dxcompiler.dll && cp build external/dxil.dll && cp build external/SDL3.dll && cp build external/spirv-cross-c-shared.dll
