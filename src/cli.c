@@ -53,6 +53,7 @@ void print_help(void)
     SDL_Log("  %-*s %s", column_width, "-D<name>[=<value>]", "HLSL define. Only used with HLSL source. Can be repeated.");
     SDL_Log("  %-*s %s", column_width, "", "If =<value> is omitted the define will be treated as equal to 1.");
     SDL_Log("  %-*s %s", column_width, "--msl-version <value>", "Target MSL version. Only used when transpiling to MSL. The default is 1.2.0.");
+    SDL_Log("  %-*s %s", column_width, "-c | --cull", "Allow the compiler to cull unused resource bindings. This may lead to surprising binding behavior so be careful when enabling this!");
     SDL_Log("  %-*s %s", column_width, "-g | --debug", "Generate debug information when possible. Shaders are valid only when graphics debuggers are attached.");
     SDL_Log("  %-*s %s", column_width, "-p | --pssl", "Generate PSSL-compatible shader. Destination format should be HLSL.");
 }
@@ -172,10 +173,10 @@ void write_graphics_reflect_json(SDL_IOStream *outputIO, SDL_ShaderCross_Graphic
     SDL_IOprintf(
         outputIO,
         "{ \"samplers\": %u, \"storage_textures\": %u, \"storage_buffers\": %u, \"uniform_buffers\": %u, ",
-        info->num_samplers,
-        info->num_storage_textures,
-        info->num_storage_buffers,
-        info->num_uniform_buffers
+        info->resource_info.num_samplers,
+        info->resource_info.num_storage_textures,
+        info->resource_info.num_storage_buffers,
+        info->resource_info.num_uniform_buffers
     );
 
     SDL_IOprintf(outputIO, "\"inputs\": [");
@@ -241,6 +242,7 @@ int main(int argc, char *argv[])
     SDL_ShaderCross_HLSL_Define *defines = NULL;
     size_t numDefines = 0;
 
+    bool cullUnusedBindings = false;
     bool enableDebug = false;
     char *mslVersion = NULL;
 
@@ -357,17 +359,17 @@ int main(int argc, char *argv[])
                 outputFilename = argv[i];
             } else if (SDL_strncmp(argv[i], "-D", SDL_strlen("-D")) == 0) {
                 numDefines += 1;
-                defines = SDL_realloc(defines, sizeof(SDL_ShaderCross_HLSL_Define) * numDefines);
+                defines = (SDL_ShaderCross_HLSL_Define*)SDL_realloc(defines, sizeof(SDL_ShaderCross_HLSL_Define) * numDefines);
                 char *equalSign = SDL_strchr(argv[i], '=');
                 if (equalSign != NULL) {
                     defines[numDefines - 1].value = equalSign + 1;
                     size_t len = defines[numDefines - 1].value - argv[i] - 2;
-                    defines[numDefines - 1].name = SDL_malloc(len);
+                    defines[numDefines - 1].name = (char*)SDL_malloc(len);
                     SDL_utf8strlcpy(defines[numDefines - 1].name, (const char *)argv[i] + 2, len);
                 } else { // no '=' was found
                     defines[numDefines - 1].value = NULL;
                     size_t len = SDL_utf8strlen(argv[i]) + 1 - 2;
-                    defines[numDefines - 1].name = SDL_malloc(len);
+                    defines[numDefines - 1].name = (char*)SDL_malloc(len);
                     SDL_utf8strlcpy(defines[numDefines - 1].name, (const char *)argv[i] + 2, len);
                 }
             } else if (SDL_strcmp(arg, "--msl-version") == 0) {
@@ -378,7 +380,9 @@ int main(int argc, char *argv[])
                 }
                 i += 1;
                 mslVersion = argv[i];
-            } else if (SDL_strcmp(argv[i], "-g") == 0 || SDL_strcmp(arg, "--debug") == 0) {
+            } else if (SDL_strcmp(arg, "-c") == 0 || SDL_strcmp(arg, "--cull") == 0) {
+                cullUnusedBindings = true;
+            }  else if (SDL_strcmp(arg, "-g") == 0 || SDL_strcmp(arg, "--debug") == 0) {
                 enableDebug = true;
             } else if (SDL_strcmp(arg, "-p") == 0 || SDL_strcmp(arg, "--pssl") == 0) {
                 psslCompat = true;
@@ -477,31 +481,35 @@ int main(int argc, char *argv[])
 
     // null-terminate the defines array
     if (defines != NULL) {
-        defines = SDL_realloc(defines, sizeof(SDL_ShaderCross_HLSL_Define) * (numDefines + 1));
+        defines = (SDL_ShaderCross_HLSL_Define*)SDL_realloc(defines, sizeof(SDL_ShaderCross_HLSL_Define) * (numDefines + 1));
         defines[numDefines].name = NULL;
         defines[numDefines].value = NULL;
     }
 
     if (spirvSource) {
         SDL_ShaderCross_SPIRV_Info spirvInfo;
-        spirvInfo.bytecode = fileData;
+        spirvInfo.bytecode = (const Uint8*)fileData;
         spirvInfo.bytecode_size = fileSize;
         spirvInfo.entrypoint = entrypointName;
         spirvInfo.shader_stage = shaderStage;
-        spirvInfo.enable_debug = enableDebug;
-        spirvInfo.name = filename;
         spirvInfo.props = SDL_CreateProperties();
-        if (mslVersion) {
-            SDL_SetStringProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SPIRV_MSL_VERSION, mslVersion);
+        if (enableDebug) {
+            SDL_SetBooleanProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SHADER_DEBUG_ENABLE_BOOLEAN, true);
+            SDL_SetBooleanProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SHADER_DEBUG_NAME_STRING, filename);
         }
-
+        if (cullUnusedBindings) {
+            SDL_SetBooleanProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SHADER_CULL_UNUSED_BINDINGS_BOOLEAN, true);
+        }
+        if (mslVersion) {
+            SDL_SetStringProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SPIRV_MSL_VERSION_STRING, mslVersion);
+        }
         if (psslCompat) {
-            SDL_SetBooleanProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SPIRV_PSSL_COMPATIBILITY, true);
+            SDL_SetBooleanProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SPIRV_PSSL_COMPATIBILITY_BOOLEAN, true);
         }
 
         switch (destinationFormat) {
             case SHADERFORMAT_DXBC: {
-                Uint8 *buffer = SDL_ShaderCross_CompileDXBCFromSPIRV(
+                Uint8 *buffer = (Uint8*)SDL_ShaderCross_CompileDXBCFromSPIRV(
                     &spirvInfo,
                     &bytecodeSize);
                 if (buffer == NULL) {
@@ -515,7 +523,7 @@ int main(int argc, char *argv[])
             }
 
             case SHADERFORMAT_DXIL: {
-                Uint8 *buffer = SDL_ShaderCross_CompileDXILFromSPIRV(
+                Uint8 *buffer = (Uint8*)SDL_ShaderCross_CompileDXILFromSPIRV(
                     &spirvInfo,
                     &bytecodeSize);
                 if (buffer == NULL) {
@@ -529,7 +537,7 @@ int main(int argc, char *argv[])
             }
 
             case SHADERFORMAT_MSL: {
-                char *buffer = SDL_ShaderCross_TranspileMSLFromSPIRV(
+                char *buffer = (char*)SDL_ShaderCross_TranspileMSLFromSPIRV(
                     &spirvInfo);
                 if (buffer == NULL) {
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to transpile MSL from SPIR-V: %s", SDL_GetError());
@@ -542,7 +550,7 @@ int main(int argc, char *argv[])
             }
 
             case SHADERFORMAT_HLSL: {
-                char *buffer = SDL_ShaderCross_TranspileHLSLFromSPIRV(
+                char *buffer = (char*)SDL_ShaderCross_TranspileHLSLFromSPIRV(
                     &spirvInfo);
                 if (buffer == NULL) {
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to transpile HLSL from SPIRV: %s", SDL_GetError());
@@ -563,7 +571,7 @@ int main(int argc, char *argv[])
             case SHADERFORMAT_JSON: {
                 if (shaderStage == SDL_SHADERCROSS_SHADERSTAGE_COMPUTE) {
                     SDL_ShaderCross_ComputePipelineMetadata *info = SDL_ShaderCross_ReflectComputeSPIRV(
-                        fileData,
+                        (const Uint8*)fileData,
                         fileSize,
                         0);
                     if (info) {
@@ -574,8 +582,8 @@ int main(int argc, char *argv[])
                         result = 1;
                     }
                 } else {
-                    SDL_ShaderCross_GraphicsShaderMetadata *info = SDL_ShaderCross_ReflectGraphicsSPIRV(
-                        fileData,
+                    SDL_ShaderCross_GraphicsShaderMetadata *info = (SDL_ShaderCross_GraphicsShaderMetadata*)SDL_ShaderCross_ReflectGraphicsSPIRV(
+                        (const Uint8*)fileData,
                         fileSize,
                         0);
                     if (info) {
@@ -599,18 +607,25 @@ int main(int argc, char *argv[])
         SDL_DestroyProperties(spirvInfo.props);
     } else {
         SDL_ShaderCross_HLSL_Info hlslInfo;
-        hlslInfo.source = fileData;
+        hlslInfo.source = (const char*)fileData;
         hlslInfo.entrypoint = entrypointName;
         hlslInfo.include_dir = includeDir;
         hlslInfo.defines = defines;
         hlslInfo.shader_stage = shaderStage;
-        hlslInfo.enable_debug = enableDebug;
-        hlslInfo.name = filename;
-        hlslInfo.props = 0;
+        hlslInfo.props = SDL_CreateProperties();
+
+        if (enableDebug) {
+            SDL_SetBooleanProperty(hlslInfo.props, SDL_SHADERCROSS_PROP_SHADER_DEBUG_ENABLE_BOOLEAN, true);
+            SDL_SetStringProperty(hlslInfo.props, SDL_SHADERCROSS_PROP_SHADER_DEBUG_NAME_STRING, filename);
+        }
+
+        if (cullUnusedBindings) {
+            SDL_SetBooleanProperty(hlslInfo.props, SDL_SHADERCROSS_PROP_SHADER_CULL_UNUSED_BINDINGS_BOOLEAN, true);
+        }
 
         switch (destinationFormat) {
             case SHADERFORMAT_DXBC: {
-                Uint8 *buffer = SDL_ShaderCross_CompileDXBCFromHLSL(
+                Uint8 *buffer = (Uint8*)SDL_ShaderCross_CompileDXBCFromHLSL(
                     &hlslInfo,
                     &bytecodeSize);
                 if (buffer == NULL) {
@@ -624,7 +639,7 @@ int main(int argc, char *argv[])
             }
 
             case SHADERFORMAT_DXIL: {
-                Uint8 *buffer = SDL_ShaderCross_CompileDXILFromHLSL(
+                Uint8 *buffer = (Uint8*)SDL_ShaderCross_CompileDXILFromHLSL(
                     &hlslInfo,
                     &bytecodeSize);
                 if (buffer == NULL) {
@@ -647,16 +662,24 @@ int main(int argc, char *argv[])
                     result = 1;
                 } else {
                     SDL_ShaderCross_SPIRV_Info spirvInfo;
-                    spirvInfo.bytecode = spirv;
+                    spirvInfo.bytecode = (const Uint8*)spirv;
                     spirvInfo.bytecode_size = bytecodeSize;
                     spirvInfo.entrypoint = entrypointName;
                     spirvInfo.shader_stage = shaderStage;
-                    spirvInfo.enable_debug = enableDebug;
                     spirvInfo.props = SDL_CreateProperties();
-                    if (mslVersion) {
-                        SDL_SetStringProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SPIRV_MSL_VERSION, mslVersion);
+
+                    if (enableDebug) {
+                        SDL_SetBooleanProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SHADER_DEBUG_ENABLE_BOOLEAN, true);
+                        SDL_SetStringProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SHADER_DEBUG_NAME_STRING, filename);
                     }
-                    char *buffer = SDL_ShaderCross_TranspileMSLFromSPIRV(
+                    if (cullUnusedBindings) {
+                        SDL_SetBooleanProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SHADER_DEBUG_ENABLE_BOOLEAN, true);
+                    }
+                    if (mslVersion) {
+                        SDL_SetStringProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SPIRV_MSL_VERSION_STRING, mslVersion);
+                    }
+
+                    char *buffer = (char*)SDL_ShaderCross_TranspileMSLFromSPIRV(
                         &spirvInfo);
                     if (buffer == NULL) {
                         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to transpile MSL from HLSL: %s", SDL_GetError());
@@ -672,7 +695,7 @@ int main(int argc, char *argv[])
             }
 
             case SHADERFORMAT_SPIRV: {
-                Uint8 *buffer = SDL_ShaderCross_CompileSPIRVFromHLSL(
+                Uint8 *buffer = (Uint8*)SDL_ShaderCross_CompileSPIRVFromHLSL(
                     &hlslInfo,
                     &bytecodeSize);
                 if (buffer == NULL) {
@@ -697,18 +720,24 @@ int main(int argc, char *argv[])
                 }
 
                 SDL_ShaderCross_SPIRV_Info spirvInfo;
-                spirvInfo.bytecode = spirv;
+                spirvInfo.bytecode = (const Uint8*)spirv;
                 spirvInfo.bytecode_size = bytecodeSize;
                 spirvInfo.entrypoint = entrypointName;
                 spirvInfo.shader_stage = shaderStage;
-                spirvInfo.enable_debug = enableDebug;
                 spirvInfo.props = SDL_CreateProperties();
 
+                if (enableDebug) {
+                    SDL_SetBooleanProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SHADER_DEBUG_ENABLE_BOOLEAN, true);
+                    SDL_SetStringProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SHADER_DEBUG_NAME_STRING, filename);
+                }
+                if (cullUnusedBindings) {
+                    SDL_SetBooleanProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SHADER_CULL_UNUSED_BINDINGS_BOOLEAN, true);
+                }
                 if (psslCompat) {
-                    SDL_SetBooleanProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SPIRV_PSSL_COMPATIBILITY, true);
+                    SDL_SetBooleanProperty(spirvInfo.props, SDL_SHADERCROSS_PROP_SPIRV_PSSL_COMPATIBILITY_BOOLEAN, true);
                 }
 
-                char *buffer = SDL_ShaderCross_TranspileHLSLFromSPIRV(
+                char *buffer = (char*)SDL_ShaderCross_TranspileHLSLFromSPIRV(
                     &spirvInfo);
 
                 if (buffer == NULL) {
@@ -737,7 +766,7 @@ int main(int argc, char *argv[])
 
                 if (shaderStage == SDL_SHADERCROSS_SHADERSTAGE_COMPUTE) {
                     SDL_ShaderCross_ComputePipelineMetadata *info = SDL_ShaderCross_ReflectComputeSPIRV(
-                        spirv,
+                        (const Uint8*)spirv,
                         bytecodeSize,
                         0);
                     SDL_free(spirv);
@@ -751,7 +780,7 @@ int main(int argc, char *argv[])
                     }
                 } else {
                     SDL_ShaderCross_GraphicsShaderMetadata *info = SDL_ShaderCross_ReflectGraphicsSPIRV(
-                        spirv,
+                        (const Uint8*)spirv,
                         bytecodeSize,
                         0);
                     SDL_free(spirv);
@@ -774,6 +803,8 @@ int main(int argc, char *argv[])
                 break;
             }
         }
+
+        SDL_DestroyProperties(hlslInfo.props);
     }
 
     SDL_CloseIO(outputIO);

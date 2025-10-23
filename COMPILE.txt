@@ -1,3 +1,7 @@
 WINDOWS
 -------
-git submodule update --init --recursive && mkdir build & clang src/SDL_shadercross.c src/cli.c -Iinclude -I../SDL/include -Iexternal/SPIRV-Cross -DSDL_SHADERCROSS_DXC -Lexternal -lSDL3 -LC:\VulkanSDK\1.4.321.1\Bin -lspirv-cross-c-shared -LC:/VulkanSDK/1.4.321.1/Lib -lvulkan-1 -ldxil -ldxcompiler -o build/shadercross.exe && copy .\external\dxcompiler.dll build && copy .\external\dxil.dll build && copy .\external\SDL3.dll build && copy .\external\spirv-cross-c-shared.dll build
+git submodule update --init --recursive && mkdir build && clang src/SDL_shadercross.c src/cli.c -Iinclude -I../SDL/include -Iexternal/SPIRV-Cross -DSDL_SHADERCROSS_DXC -Lexternal -lSDL3 -LC:\VulkanSDK\1.4.321.1\Bin -lspirv-cross-c-shared -LC:/VulkanSDK/1.4.321.1/Lib -lvulkan-1 -ldxil -ldxcompiler -o build/shadercross.exe && copy .\external\dxcompiler.dll build && copy .\external\dxil.dll build && copy .\external\SDL3.dll build && copy .\external\spirv-cross-c-shared.dll build
+
+LINUX
+-----
+git submodule update --init --recursive && mkdir build && clang -c src/SDL_shadercross.c -Iinclude -I../SDL/include -Iexternal/SPIRV-Cross -o build/SDL_shadercross.o && clang++ -std=c++17 -c src/cli.c -Iinclude -I../SDL/include -Iexternal/SPIRV-Cross -o build/cli.o && clang++ build/SDL_shadercross.o build/cli.o external/libSDL3.a external/libspirv-cross-c.a external/libspirv-cross-core.a external/libspirv-cross-glsl.a external/libspirv-cross-msl.a external/libspirv-cross-hlsl.a external/libspirv-cross-cpp.a external/libspirv-cross-reflect.a -lm -o build/shadercross
