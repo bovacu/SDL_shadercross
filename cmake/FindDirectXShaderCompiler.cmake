@@ -21,8 +21,8 @@ if(WIN32)
         DirectXShaderCompiler_dxcompiler_LIBRARY
         DirectXShaderCompiler_dxil_BINARY
     )
-else()
-    find_path(DirectXShaderCompiler_INCLUDE_PATH NAMES "dxcapi.h" PATH_SUFFIXES "include" "include/dxc" "linux/include" "linux/include/dxc")
+elseif(UNIX AND NOT APPLE)
+find_path(DirectXShaderCompiler_INCLUDE_PATH NAMES "dxcapi.h" PATH_SUFFIXES "include" "include/dxc" "linux/include" "linux/include/dxc")
     find_library(DirectXShaderCompiler_dxcompiler_LIBRARY NAMES "dxcompiler" PATH_SUFFIXES "lib" "linux/lib" HINTS ${DirectXShaderCompiler_ROOT})
     find_library(DirectXShaderCompiler_dxil_LIBRARY NAMES "dxil" PATH_SUFFIXES "lib" "linux/lib" HINTS ${DirectXShaderCompiler_ROOT})
     set(required_vars
@@ -30,6 +30,26 @@ else()
         DirectXShaderCompiler_dxcompiler_LIBRARY
         DirectXShaderCompiler_dxil_LIBRARY
     )
+else()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
+        find_path(DirectXShaderCompiler_INCLUDE_PATH NAMES "dxcapi.h" PATH_SUFFIXES "include" "include/dxc" "osx/include" "osx/include/dxc")
+        find_library(DirectXShaderCompiler_dxcompiler_LIBRARY NAMES "dxcompiler" PATH_SUFFIXES "lib" "osx/lib" HINTS ${DirectXShaderCompiler_ROOT})
+        find_library(DirectXShaderCompiler_dxil_LIBRARY NAMES "dxil" PATH_SUFFIXES "lib" "osx/lib" HINTS ${DirectXShaderCompiler_ROOT})
+        set(required_vars
+            DirectXShaderCompiler_INCLUDE_PATH
+            DirectXShaderCompiler_dxcompiler_LIBRARY
+            DirectXShaderCompiler_dxil_LIBRARY)
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+        find_path(DirectXShaderCompiler_INCLUDE_PATH NAMES "dxcapi.h" PATH_SUFFIXES "include" "include/dxc" "osx-silicon/include" "osx-silicon/include/dxc")
+        find_library(DirectXShaderCompiler_dxcompiler_LIBRARY NAMES "dxcompiler" PATH_SUFFIXES "lib" "osx-silicon/lib" HINTS ${DirectXShaderCompiler_ROOT})
+        find_library(DirectXShaderCompiler_dxil_LIBRARY NAMES "dxil" PATH_SUFFIXES "lib" "osx-silicon/lib" HINTS ${DirectXShaderCompiler_ROOT})
+        set(required_vars
+            DirectXShaderCompiler_INCLUDE_PATH
+            DirectXShaderCompiler_dxcompiler_LIBRARY
+            DirectXShaderCompiler_dxil_LIBRARY)
+    else()
+        message(FATAL_ERROR "Unsupported operating system")
+    endif()
 endif()
 
 include(FindPackageHandleStandardArgs)

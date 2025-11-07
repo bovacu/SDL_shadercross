@@ -5,3 +5,14 @@ git submodule update --init --recursive && mkdir build && clang src/SDL_shadercr
 LINUX
 -----
 git submodule update --init --recursive && cmake -S . -B build -DSDLSHADERCROSS_DXC=ON -DSDL3_DIR=/home/borja/SDL/build -Dspirv_cross_c_shared_DIR=/home/borja/VulkanSDK/1.4.328.1/x86_64/share/spirv_cross_c_shared/cmake
+
+MAC
+---
+- First download and build DirectXShader (source for correct params compilation https://github.com/microsoft/DirectXShaderCompiler/issues/4480):
+git clone https://github.com/microsoft/DirectXShaderCompiler.git && git submodule update --init --recursive && mkdir build && cd build && cmake -DDXC_USE_LIT=On -C ../cmake/caches/PredefinedParams.cmake -DLLVM_ENABLE_ASSERTIONS=On -DLLVM_LIT_ARGS="-v" ..
+
+- Put the 2 dylib generated files into /Users/borjavazquez/SDL_shadercross/external/DirectXShaderCompiler-binaries/osx-silicon/lib if not Intel, and /Users/borjavazquez/SDL_shadercross/external/DirectXShaderCompiler-binaries/osx/lib if Intel. Also copy the include dir generated in the build folder into /Users/borjavazquez/SDL_shadercross/external/DirectXShaderCompiler-binaries/osx-silicon or /Users/borjavazquez/SDL_shadercross/external/DirectXShaderCompiler-binaries/osx
+
+- Download a clean version of SDL, and do cmake -S. -Bbuild on the SDL dir. The DSDL3_DIR of the next command points to this SDL dir we just did cmake.
+- Download SDL_shadercross from bovacu and:
+git submodule update --init --recursive && cmake -S . -B build -DSDLSHADERCROSS_DXC=ON -DSDL3_DIR=/Users/borjavazquez/SDL/build -Dspirv_cross_c_shared_DIR=/Users/borjavazquez/VulkanSDK/1.4.328.1/macOS/lib/cmake/spirv_cross_c_shared/cmake/ && make --build build

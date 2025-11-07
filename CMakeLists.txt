@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.22)
 set(MAJOR_VERSION 3)
 set(MINOR_VERSION 0)
 set(MICRO_VERSION 0)
-set(SDL_REQUIRED_VERSION "3.1.3")
+# set(SDL_REQUIRED_VERSION "3.2.18")
 
 # option() honors normal variables.
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
